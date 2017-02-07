@@ -41,7 +41,15 @@ endif
 lfe-shell: deps
 	$(verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe
 
-# Templates
+### Templates
+
+# template render hook for LFE (extension must be .lfe)
+define render_template
+	$(verbose) printf -- '$(subst $(newline),\n,$(subst %,%%,$(subst ','\'',$(subst $(tab),$(WS),$(call $(1))))))\n' > $(2)
+	if [ "$(subst lfe-,,$(1))" != "$(1)" ]; then
+		mv $(2) $(basename $(2)).lfe
+	fi
+endef
 
 define tpl_lfe-supervisor
 (defmodule $(n)
