@@ -40,3 +40,21 @@ endif
 
 lfe-shell: deps
 	$(verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe
+
+# Templates
+
+define tpl_lfe-supervisor
+(defmodule $(n)
+	(behaviour supervisor)
+	(export [start_link 0]
+		    [init 1]))
+
+(defun start_link ()
+	"Supervisor's launching."
+	(supervisor:start_link `#(local ,(MODULE)) (MODULE) []))
+
+(defun init (_args)
+	"Initialisation of supervisor process."
+	(let ((procs []))
+	    `#(#(one_for_one 1 5) ,procs))))
+endef
