@@ -39,7 +39,7 @@ endif
 # Shell.
 
 lfe-shell: deps
-	$(verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe
+	$(verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe -pa ebin -pa test
 
 ### Templates
 
