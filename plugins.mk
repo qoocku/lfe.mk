@@ -19,6 +19,11 @@
 lfe_verbose_0 = @echo " LFE   " $(filter %.lfe,$(?F));
 lfe_verbose = $(lfe_verbose_$(V))
 
+# Tools macros
+
+LFE = PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe
+LFEC = PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfec
+
 # Core targets.
 
 LFE_FILES = $(sort $(call core_find,src/,*.lfe))
@@ -32,33 +37,87 @@ $(LFE_FILES): $(MAKEFILE_LIST)
 	@touch $@
 
 ebin/$(PROJECT).app:: $(LFE_FILES) | ebin/
-	$(if $(strip $?),$(lfe_verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfec -o ebin/ $(LFE_FILES))
+	$(if $(strip $?),$(lfe_verbose) $(LFEC) -o ebin/ $(LFE_FILES))
 
 endif
 
-# Shell.
+### Help hints.
+
+help::
+	$(verbose) printf "%s\n" "" \
+		"LFE targets:" \
+		"  lfe-shell             Run LFE shell" \
+		"  lfe-new ...           Generate LFE source based on template (see 'new' target for arguments)" \
+		"  lfe-bootstrap         Generate skeleton on an lfe.mk application" \
+		"  lfe-new-app ...       Generate skeleton for OTP aplication in LFE (see 'new-app')" \
+		"  lfe-list-templates    List available LFE templates"
+
+### Shell.
 
 lfe-shell: deps
-	$(verbose) PATH=$(PATH):$(DEPS_DIR)/lfe/bin lfe -pa ebin -pa test
+	$(verbose) $(LFE) -pa ebin -pa test
+
+### Tests.
+
+test-build:: lfe-test-dir
+
+lfe-test-dir:
+	$(gen_verbose) $(LFEC) -v $(filter-out -D%,$(TEST_ERLC_OPTS)) -I include/ -o $(TEST_DIR) \
+		 -pa ebin/ -- $(call core_find,$(TEST_DIR)/,*.lfe)
+
+EUNIT_EBIN_MODS += $(notdir $(basename $(LFE_FILES) $(BEAM_FILES)))
+EUNIT_TEST_MODS += $(notdir $(basename $(call core_find,$(TEST_DIR)/,*.lfe)))
+
+### Bootstraping
+
+lfe-bootstrap:
+ifneq ($(wildcard src/),)
+	$(error Error: src/ directory already exists)
+endif
+	$(eval p := $(PROJECT))
+	$(eval n := $(PROJECT)-sup)
+	$(call render_template,bs_Makefile,Makefile)
+	$(verbose) echo
+	$(verbose) echo "include erlang.mk" >> Makefile
+	$(verbose) mkdir src/
+	$(call render_template,bs_lfe-app,src/$(PROJECT)-app.lfe)
+	$(call render_template,tpl_lfe-supervisor,src/$(PROJECT)-sup.lfe)
+
+lfe-new-app:
+ifndef in
+	$(error Usage: $(MAKE) new-app in=APP)
+endif
+ifneq ($(wildcard $(APPS_DIR)/$in),)
+	$(error Error: Application $in already exists)
+endif
+	$(eval p := $(in))
+	$(eval n := $(in)-sup)
+	$(verbose) mkdir -p $(APPS_DIR)/$p/src/
+	$(call render_template,bs_apps_Makefile,$(APPS_DIR)/$p/Makefile)
+	$(call render_template,bs_lfe-app,$(APPS_DIR)/$p/src/$p-app.erl)
+	$(call render_template,tpl_lfe-supervisor,$(APPS_DIR)/$p/src/$p-sup.erl)
 
 ### Templates
 
-# template render hook for LFE (extension must be .lfe)
-
-override define render_template
-	$(verbose) printf -- '$(subst $(newline),\n,$(subst %,%%,$(subst ','\'',$(subst $(tab),$(WS),$(call $(1))))))\n' > $(2)
-	$(verbose) if [ "$(subst lfe-,,$(1))" != "$(1)" ]; then \
-		mv $(2) $(basename $(2)).lfe ; \
-	fi
+define lfe-new-makeflags
+$(patsubst t=%,t=lfe-%,$(subst _,-,$(filter t=%,$(MAKEFLAGS)))) \
+$(filter-out t=%,$(MAKEFLAGS))
 endef
+
+lfe-new:
+	$(verbose) $(MAKE) new $(lfe-new-makeflags)
+	$(verbose) mv src/$(n).erl src/$(n).lfe
+
+list-lfe-templates:
+	$(verbose) echo Available LFE templates: $(sort $(subst -,_,$(patsubst tpl_lfe-%,%,$(filter tpl_lfe-%,$(.VARIABLES)))))
 
 define tpl_lfe-supervisor
 (defmodule $(n)
 	(behaviour supervisor)
-	(export [start_link 0]
+	(export [start-link 0]
 		    [init 1]))
 
-(defun start_link ()
+(defun start-link ()
 	"Supervisor's launching."
 	(supervisor:start_link `#(local ,(MODULE)) (MODULE) []))
 
@@ -147,7 +206,7 @@ define tpl_lfe-gen-fsm
   (behaviour gen_fsm)
 
   ;; API.
-  (export [start_link 0])
+  (export [start-link 0])
 
   ;; gen_fsm callbacks
   (export [init 1]
@@ -163,8 +222,8 @@ define tpl_lfe-gen-fsm
 
 ;;; API.
 
-#|(defspec start_link () `#(ok (pid)))|#
-(defun start_link ()
+#|(defspec start-link () `#(ok (pid)))|#
+(defun start-link ()
   (gen_fsm:start_link (MODULE) [] []))
 
 ;;; gen_fsm callbacks
@@ -230,4 +289,27 @@ define tpl_lfe-cowboy-rest
 
 (defun get_html (req state)
   `#(<<"<html><body>This is REST!</body></html>">> ,req ,state))
+endef
+
+define tpl_lfe-module
+(defmodule $(n)
+  "A module
+
+  ... put description here ...
+  "
+  (export all))
+endef
+
+define bs_lfe-app
+(defmodule ($p-app)
+  (behaviour application)
+
+  (export [start 2]
+          [stop 1]))
+
+(defun start (_type, _args)
+	($p-sup:start-link))
+
+(defun stop (_state)
+	ok)
 endef
